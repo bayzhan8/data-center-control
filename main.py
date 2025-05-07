@@ -1,92 +1,81 @@
 import argparse
-import json
-from typing import Dict, Any
-import numpy as np
-from config import DataCenterConfig
+from typing import Dict, Any, Tuple
 from environment import DataCenterEnv
+from config import DataCenterConfig
 from agents.value_iteration import ValueIterationAgent
 from agents.policy_iteration import PolicyIterationAgent
 from agents.rl_agent import QLearningAgent
+from agents.dqn_agent import DQNAgent
 from simulator import Simulator
 
-def run_experiment(agent_type: str, config: DataCenterConfig) -> Dict[str, Any]:
-    """Run experiment with specified agent type."""
-    # Create environment
-    env = DataCenterEnv(config)
-    
-    # Create agent
+def parse_args() -> str:
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(description='Data Center Control System')
+    parser.add_argument('--agent', type=str, choices=['vi', 'pi', 'rl', 'dqn', 'all'],
+                      default='all', help='Agent type to run (vi=Value Iteration, pi=Policy Iteration, rl=Q-learning, dqn=Deep Q-Network)')
+    return parser.parse_args().agent
+
+def train_agent(agent_type: str, env: DataCenterEnv, config: DataCenterConfig) -> Tuple[Any, Dict[str, Any]]:
+    """Train a specific agent type and return the agent and training results."""
     if agent_type == 'vi':
+        print("Training Value Iteration agent...")
         agent = ValueIterationAgent(env, config)
+        results = agent.train()
+        print(f"Value Iteration completed in {results['iterations']} iterations")
+    
     elif agent_type == 'pi':
+        print("\nTraining Policy Iteration agent...")
         agent = PolicyIterationAgent(env, config)
+        results = agent.train()
+        print(f"Policy Iteration completed in {results['iterations']} iterations")
+    
     elif agent_type == 'rl':
+        print("\nTraining Q-learning agent...")
         agent = QLearningAgent(env, config)
-    else:
-        raise ValueError(f"Unknown agent type: {agent_type}")
+        results = agent.train()
+        print(f"Q-learning completed in {results['episodes_trained']} episodes")
     
-    # Train agent
-    print(f"Training {agent_type} agent...")
-    training_metrics = agent.train()
-    print(f"Training completed. Metrics: {training_metrics}")
+    elif agent_type == 'dqn':
+        print("\nTraining DQN agent...")
+        agent = DQNAgent(env, config)
+        results = agent.train()
+        print(f"DQN completed in {results['episodes_trained']} episodes")
+        print(f"Final epsilon: {results['final_epsilon']:.3f}")
+        print(f"Final average reward: {results['final_avg_reward']:.2f}")
     
-    # Create simulator
+    return agent, results
+
+def evaluate_agent(agent_type: str, agent: Any, env: DataCenterEnv, config: DataCenterConfig) -> Dict[str, float]:
+    """Evaluate a trained agent and return the metrics."""
     simulator = Simulator(env, agent, config)
+    metrics = simulator.run_multiple_episodes(config.eval_episodes)
     
-    # Run evaluation episodes
-    print(f"Running evaluation episodes for {agent_type} agent...")
-    eval_metrics = simulator.run_multiple_episodes(config.eval_episodes)
-    print(f"Evaluation completed. Metrics: {eval_metrics}")
+    print(f"\n{agent_type.upper()} Results:")
+    print(f"Average Reward: {metrics['avg_reward']:.2f} ± {metrics['std_reward']:.2f}")
+    print(f"Average Energy Cost: {metrics['avg_energy_cost']:.2f} ± {metrics['std_energy_cost']:.2f}")
+    print(f"Average Queue Cost: {metrics['avg_queue_cost']:.2f} ± {metrics['std_queue_cost']:.2f}")
+    print(f"Average Dropped Jobs: {metrics['avg_dropped_jobs']:.2f} ± {metrics['std_dropped_jobs']:.2f}")
     
-    return {
-        'agent_type': agent_type,
-        'training_metrics': training_metrics,
-        'eval_metrics': eval_metrics
-    }
+    return metrics
 
 def main():
-    parser = argparse.ArgumentParser(description='Data Center Control Experiment')
-    parser.add_argument('--agent', type=str, choices=['vi', 'pi', 'rl', 'all'],
-                      default='all', help='Agent type to run')
-    parser.add_argument('--config', type=str, help='Path to config file')
-    args = parser.parse_args()
+    # Parse arguments and setup
+    agent_type = parse_args()
+    config = DataCenterConfig()
+    env = DataCenterEnv(config)
     
-    # Load config
-    if args.config:
-        with open(args.config, 'r') as f:
-            config_dict = json.load(f)
-        config = DataCenterConfig(**config_dict)
+    # Train and evaluate agents
+    if agent_type == 'all':
+        agent_types = ['vi', 'pi', 'rl', 'dqn']
     else:
-        config = DataCenterConfig()
+        agent_types = [agent_type]
     
-    # Run experiments
-    if args.agent == 'all':
-        agent_types = ['vi', 'pi', 'rl']
-    else:
-        agent_types = [args.agent]
-    
-    results = {}
     for agent_type in agent_types:
-        print(f"\nRunning experiment for {agent_type} agent...")
-        results[agent_type] = run_experiment(agent_type, config)
-    
-    # Save results
-    with open('experiment_results.json', 'w') as f:
-        json.dump(results, f, indent=2)
-    
-    # Print comparison
-    print("\nComparison of agents:")
-    print("-" * 120)
-    print(f"{'Agent':<10} {'Avg Reward':<15} {'Std Reward':<15} {'Energy Cost':<15} {'Queue Cost':<15} {'Drop Cost':<15} {'Dropped Jobs':<15}")
-    print("-" * 120)
-    for agent_type in agent_types:
-        metrics = results[agent_type]['eval_metrics']
-        print(f"{agent_type:<10} "
-              f"{metrics['avg_reward']:<15.2f} "
-              f"{metrics['std_reward']:<15.2f} "
-              f"{metrics['avg_energy_cost']:<15.2f} "
-              f"{metrics['avg_queue_cost']:<15.2f} "
-              f"{metrics['avg_drop_cost']:<15.2f} "
-              f"{metrics['avg_dropped_jobs']:<15.2f}")
+        # Train agent
+        agent, _ = train_agent(agent_type, env, config)
+        
+        # Evaluate agent
+        evaluate_agent(agent_type, agent, env, config)
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main() 

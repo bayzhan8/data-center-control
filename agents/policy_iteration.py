@@ -9,10 +9,8 @@ class PolicyIterationAgent(BaseAgent):
         super().__init__(env, config)
         self.value_function = {}  # Maps states to their values
         self.policy = {}  # Maps states to their actions
-        self.transition_cache = {}  # Cache for transition probabilities and rewards
         self._initialize_value_function()
         self._initialize_policy()
-        self._initialize_transition_cache()
     
     def _initialize_value_function(self):
         """Initialize value function for all possible states."""
@@ -28,41 +26,6 @@ class PolicyIterationAgent(BaseAgent):
         for state in self.value_function.keys():
             possible_actions = self.env.get_possible_actions(state)
             self.policy[state] = possible_actions[0]  # Start with first possible action
-    
-    def _initialize_transition_cache(self):
-        """Initialize cache for transition probabilities and rewards."""
-        for state in self.value_function.keys():
-            for action in self.env.get_possible_actions(state):
-                transitions = []
-                for next_state, prob in self.env.get_transition_probabilities(state, action):
-                    # Calculate reward directly without environment step
-                    a_next, b_next, x_s_a, x_s_b, x_l_b = action
-                    a_t, b_t, q_s, q_l = state
-                    
-                    # Calculate costs
-                    energy_cost = (self.config.c_A * a_next + 
-                                 self.config.c_B * b_next)
-                    switch_cost = (self.config.c_switch * 
-                                 (abs(a_next - a_t) + abs(b_next - b_t)))
-                    queue_cost = self.config.c_queue * (q_s + q_l)
-                    
-                    # Calculate dropped jobs
-                    dropped_jobs = 0
-                    if q_s == self.config.max_queue_small and prob == self.config.p_S:
-                        dropped_jobs = 1
-                    elif q_l == self.config.max_queue_large and prob == self.config.p_L:
-                        dropped_jobs = 1
-                    
-                    # Calculate drop cost
-                    drop_cost = self.config.c_drop * dropped_jobs
-                    
-                    # Total cost (negative reward)
-                    total_cost = energy_cost + switch_cost + queue_cost + drop_cost
-                    reward = -total_cost
-                    
-                    transitions.append((next_state, prob, reward))
-                
-                self.transition_cache[(state, action)] = transitions
     
     def train(self) -> Dict[str, Any]:
         """Run policy iteration to find optimal policy."""
@@ -84,10 +47,12 @@ class PolicyIterationAgent(BaseAgent):
         }
     
     def _modified_policy_evaluation(self):
-        """More efficient policy evaluation using modified policy iteration."""
-        # Use a small number of iterations instead of full convergence
-        for _ in range(5):  # Can adjust this number
+        """Full policy evaluation until convergence."""
+        max_diff = float('inf')
+        while max_diff > self.config.convergence_threshold:
+            max_diff = 0.0
             for state in self.value_function.keys():
+                old_value = self.value_function[state]
                 action = self.policy[state]
                 transitions = self.transition_cache[(state, action)]
                 
@@ -97,6 +62,7 @@ class PolicyIterationAgent(BaseAgent):
                     new_value += prob * (reward + self.config.gamma * self.value_function[next_state])
                 
                 self.value_function[state] = new_value
+                max_diff = max(max_diff, abs(new_value - old_value))
     
     def _policy_improvement(self) -> bool:
         """Improve policy based on current value function."""

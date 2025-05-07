@@ -10,7 +10,7 @@ class Simulator:
         self.agent = agent
         self.config = config
     
-    def run_episode(self, max_steps: int = 1000) -> Dict[str, Any]:
+    def run_episode(self, max_steps: int = 10000) -> Dict[str, Any]:
         """Run a single episode and collect metrics."""
         state, _ = self.env.reset()
         total_reward = 0
@@ -66,7 +66,7 @@ class Simulator:
             'steps': len(queue_lengths)
         }
     
-    def run_multiple_episodes(self, num_episodes: int) -> Dict[str, List[Any]]:
+    def run_multiple_episodes(self, num_episodes: int = 1000) -> Dict[str, List[Any]]:
         """Run multiple episodes and collect aggregate metrics."""
         episode_metrics = []
         

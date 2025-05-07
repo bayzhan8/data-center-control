@@ -7,31 +7,40 @@ class DataCenterConfig:
     N_A: int = 2  # Total number of Type A servers
     N_B: int = 3  # Total number of Type B servers
     
+    # Queue configuration
+    max_queue_small: int = 3  # Maximum queue length for small jobs
+    max_queue_large: int = 2  # Maximum queue length for large jobs
+    
     # Cost parameters
     c_A: float = 1.0  # Energy cost per active A server
     c_B: float = 2.0  # Energy cost per active B server
     c_switch: float = 0.5  # Cost of changing server state
-    c_queue: float = 0.2  # Cost per job waiting in queue
-    c_drop: float = 5.0  # Penalty cost per dropped job
+    c_queue: float = 0.1  # Cost per job waiting in queue
+    c_drop: float = 5.0  # Cost of dropping a job
+    
+    # Completion rewards
+    c_complete_small: float = 2.0  # Reward for completing a small job
+    c_complete_large: float = 4.0  # Reward for completing a large job
     
     # Job arrival probabilities
-    p_S: float = 0.4  # Probability of small job arrival
-    p_L: float = 0.3  # Probability of large job arrival
-    
-    # Queue limits
-    max_queue_small: int = 2  # Maximum number of small jobs in queue
-    max_queue_large: int = 3  # Maximum number of large jobs in queue
+    p_S: float = 0.3  # Probability of small job arrival
+    p_L: float = 0.2  # Probability of large job arrival
     
     # Algorithm parameters
-    gamma: float = 0.95  # Discount factor
+    gamma: float = 0.99  # Discount factor
     epsilon: float = 0.1  # Exploration rate for RL
     learning_rate: float = 0.1  # Learning rate for RL
     max_iterations: int = 1000  # Maximum iterations for VI/PI
+    max_steps: int = 1000  # Maximum steps for RL
     convergence_threshold: float = 1e-6  # Convergence threshold for VI/PI
     
     # Training parameters
-    num_episodes: int = 2000  # Number of episodes for RL training
-    eval_episodes: int = 1000  # Increased from 100 to 1000 for better statistics
+    num_episodes: int = 1000  # Number of episodes for RL training
+    eval_episodes: int = 10   # Number of episodes for evaluation
+    
+    # Early stopping parameters
+    min_episodes: int = 500  # Minimum number of episodes to train
+    max_no_improvement: int = 100  # Maximum number of episodes without improvement
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert config to dictionary for easier serialization."""
@@ -43,6 +52,8 @@ class DataCenterConfig:
             'c_switch': self.c_switch,
             'c_queue': self.c_queue,
             'c_drop': self.c_drop,
+            'c_complete_small': self.c_complete_small,
+            'c_complete_large': self.c_complete_large,
             'p_S': self.p_S,
             'p_L': self.p_L,
             'max_queue_small': self.max_queue_small,
@@ -53,7 +64,9 @@ class DataCenterConfig:
             'max_iterations': self.max_iterations,
             'convergence_threshold': self.convergence_threshold,
             'num_episodes': self.num_episodes,
-            'eval_episodes': self.eval_episodes
+            'eval_episodes': self.eval_episodes,
+            'min_episodes': self.min_episodes,
+            'max_no_improvement': self.max_no_improvement
         }
 
 # Default configuration
