@@ -4,12 +4,12 @@ from typing import Dict, Any
 @dataclass
 class DataCenterConfig:
     # Server configuration
-    N_A: int = 2  # Total number of Type A servers
-    N_B: int = 3  # Total number of Type B servers
+    N_A: int = 5  # Total number of Type A servers
+    N_B: int = 6  # Total number of Type B servers
     
     # Queue configuration
-    max_queue_small: int = 3  # Maximum queue length for small jobs
-    max_queue_large: int = 2  # Maximum queue length for large jobs
+    max_queue_small: int = 5  # Maximum queue length for small jobs
+    max_queue_large: int = 7  # Maximum queue length for large jobs
     
     # Cost parameters
     c_A: float = 1.0  # Energy cost per active A server
@@ -28,28 +28,35 @@ class DataCenterConfig:
     
     # Algorithm parameters
     gamma: float = 0.99  # Discount factor
-    epsilon: float = 0.1  # Exploration rate for RL
-    learning_rate: float = 0.1  # Learning rate for RL
+    epsilon: float = 0.5  # Much higher initial exploration
+    learning_rate: float = 0.01  # Lower learning rate for stability
     max_iterations: int = 1000  # Maximum iterations for VI/PI
     max_steps: int = 1000  # Maximum steps for RL
     convergence_threshold: float = 1e-6  # Convergence threshold for VI/PI
     
     # DQN specific parameters
     dqn_epsilon: float = 1.0  # Start with full exploration
-    dqn_epsilon_min: float = 0.05  # Increased minimum exploration rate
-    dqn_epsilon_decay: float = 0.99  # Faster decay
-    dqn_learning_rate: float = 0.001  # Learning rate for DQN
-    dqn_batch_size: int = 32  # Smaller batch size for faster training
-    dqn_target_update: int = 5  # More frequent target updates
-    dqn_memory_size: int = 5000  # Smaller memory size
+    dqn_epsilon_min: float = 0.2  # Higher minimum exploration
+    dqn_epsilon_decay: float = 0.995  # Slower decay for better exploration
+    dqn_learning_rate: float = 0.005  # Lower learning rate for stability
+    dqn_batch_size: int = 128  # Larger batch size for better learning
+    dqn_target_update: int = 5  # More frequent updates
+    dqn_memory_size: int = 10000  # Much larger memory for complex state space
+    
+    # PPO specific parameters
+    ppo_learning_rate: float = 0.0005  # Lower learning rate for stability
+    ppo_clip_ratio: float = 0.2  # Standard PPO clip ratio
+    ppo_value_coef: float = 0.5  # Value loss coefficient
+    ppo_entropy_coef: float = 0.05  # Higher entropy for better exploration
+    ppo_epochs: int = 8  # More epochs for better learning
     
     # Training parameters
-    num_episodes: int = 500  # Reduced number of episodes
+    num_episodes: int = 2000  # Number of episodes for RL training
     eval_episodes: int = 10   # Number of episodes for evaluation
     
     # Early stopping parameters
-    min_episodes: int = 200  # Reduced minimum episodes
-    max_no_improvement: int = 50  # Reduced patience for early stopping
+    min_episodes: int = 1500  # Must train for at least 1500 episodes
+    max_no_improvement: int = 300  # Much longer patience for improvement
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert config to dictionary for easier serialization."""
