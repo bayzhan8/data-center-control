@@ -34,13 +34,22 @@ class DataCenterConfig:
     max_steps: int = 1000  # Maximum steps for RL
     convergence_threshold: float = 1e-6  # Convergence threshold for VI/PI
     
+    # DQN specific parameters
+    dqn_epsilon: float = 1.0  # Start with full exploration
+    dqn_epsilon_min: float = 0.05  # Increased minimum exploration rate
+    dqn_epsilon_decay: float = 0.99  # Faster decay
+    dqn_learning_rate: float = 0.001  # Learning rate for DQN
+    dqn_batch_size: int = 32  # Smaller batch size for faster training
+    dqn_target_update: int = 5  # More frequent target updates
+    dqn_memory_size: int = 5000  # Smaller memory size
+    
     # Training parameters
-    num_episodes: int = 1000  # Number of episodes for RL training
+    num_episodes: int = 500  # Reduced number of episodes
     eval_episodes: int = 10   # Number of episodes for evaluation
     
     # Early stopping parameters
-    min_episodes: int = 500  # Minimum number of episodes to train
-    max_no_improvement: int = 100  # Maximum number of episodes without improvement
+    min_episodes: int = 200  # Reduced minimum episodes
+    max_no_improvement: int = 50  # Reduced patience for early stopping
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert config to dictionary for easier serialization."""

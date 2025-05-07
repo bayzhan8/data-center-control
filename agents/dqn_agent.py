@@ -5,6 +5,7 @@ import torch.nn as nn
 import torch.optim as optim
 from collections import deque
 import random
+from tqdm import tqdm
 from .base_agent import BaseAgent
 from environment import DataCenterEnv
 from config import DataCenterConfig
@@ -27,16 +28,10 @@ class DQNAgent(BaseAgent):
     def __init__(self, env: DataCenterEnv, config: DataCenterConfig):
         super().__init__(env, config)
         self.state_size = 4  # (a_t, b_t, q_s, q_l)
-        self.action_size = len(self.env.get_possible_actions((0, 0, 0, 0)))  # Number of possible actions
         
-        # DQN specific parameters
-        self.memory = deque(maxlen=10000)  # Experience replay buffer
-        self.batch_size = 64
-        self.gamma = config.gamma
-        self.epsilon = 1.0  # Exploration rate
-        self.epsilon_min = 0.01
-        self.epsilon_decay = 0.995
-        self.learning_rate = 0.001
+        # Create action map first
+        self.action_map = self._create_action_map()
+        self.action_size = len(self.action_map)  # Update action size based on map
         
         # Initialize networks
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -45,15 +40,27 @@ class DQNAgent(BaseAgent):
         self.target_net.load_state_dict(self.policy_net.state_dict())
         self.target_net.eval()
         
-        self.optimizer = optim.Adam(self.policy_net.parameters(), lr=self.learning_rate)
-        self.criterion = nn.MSELoss()
+        # Initialize optimizer with DQN learning rate
+        self.optimizer = optim.Adam(self.policy_net.parameters(), lr=self.config.dqn_learning_rate)
         
-        # Action mapping
-        self.action_map = self._create_action_map()
+        # Initialize memory buffer with DQN memory size
+        self.memory = deque(maxlen=self.config.dqn_memory_size)
+        
+        # Initialize exploration parameters
+        self.epsilon = self.config.dqn_epsilon
     
     def _create_action_map(self) -> List[Tuple[int, int, int, int, int]]:
         """Create a mapping from action indices to actual actions."""
-        return self.env.get_possible_actions((0, 0, 0, 0))
+        # Get all possible actions for all possible states
+        all_actions = set()
+        for a in range(self.config.N_A + 1):
+            for b in range(self.config.N_B + 1):
+                for q_s in range(self.config.max_queue_small + 1):
+                    for q_l in range(self.config.max_queue_large + 1):
+                        state = (a, b, q_s, q_l)
+                        actions = self.env.get_possible_actions(state)
+                        all_actions.update(actions)
+        return sorted(list(all_actions))  # Sort for deterministic ordering
     
     def _state_to_tensor(self, state: Tuple[int, int, int, int]) -> torch.Tensor:
         """Convert state tuple to tensor."""
@@ -72,58 +79,98 @@ class DQNAgent(BaseAgent):
         valid_actions = self.env.get_possible_actions(state)
         mask = torch.zeros(self.action_size, device=self.device)
         for action in valid_actions:
-            mask[self._get_action_index(action)] = 1
+            try:
+                idx = self._get_action_index(action)
+                if idx < self.action_size:  # Double check index is valid
+                    mask[idx] = 1
+            except (ValueError, IndexError):
+                # If action not in map or index out of bounds, skip it
+                continue
         return mask
+    
+    def _add_to_memory(self, state: Tuple[int, int, int, int], 
+                      action: Tuple[int, int, int, int, int],
+                      reward: float,
+                      next_state: Tuple[int, int, int, int],
+                      done: bool) -> None:
+        """Add a transition to the replay memory."""
+        self.memory.append((state, action, reward, next_state, done))
     
     def train(self) -> Dict[str, Any]:
         """Train the DQN agent."""
         episode_rewards = []
+        best_avg_reward = float('-inf')
+        no_improvement_count = 0
         
-        for episode in range(self.config.num_episodes):
-            state = self.env.reset()
-            total_reward = 0
+        # Progress bar
+        pbar = tqdm(range(self.config.num_episodes), desc="Training DQN agent")
+        
+        for episode in pbar:
+            state, _ = self.env.reset()
+            episode_reward = 0
             done = False
+            step = 0
             
-            while not done:
+            while not done and step < self.config.max_steps:
                 # Select action
                 action = self.act(state)
                 
                 # Take action
-                next_state, reward, done, _ = self.env.step(action)
+                next_state, reward, done, _, _ = self.env.step(action)
                 
                 # Store transition in memory
-                self.memory.append((state, action, reward, next_state, done))
+                self._add_to_memory(state, action, reward, next_state, done)
+                
+                # Train on batch if enough samples
+                if len(self.memory) >= self.config.dqn_batch_size:
+                    self._train_step()
                 
                 # Move to next state
                 state = next_state
-                total_reward += reward
-                
-                # Train on batch if enough samples
-                if len(self.memory) >= self.batch_size:
-                    self._train_step()
+                episode_reward += reward
+                step += 1
             
             # Update target network periodically
-            if episode % 10 == 0:
+            if episode % self.config.dqn_target_update == 0:
                 self.target_net.load_state_dict(self.policy_net.state_dict())
             
             # Decay epsilon
-            self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
+            self.epsilon = max(self.config.dqn_epsilon_min, 
+                             self.epsilon * self.config.dqn_epsilon_decay)
             
-            episode_rewards.append(total_reward)
+            episode_rewards.append(episode_reward)
             
-            if episode % 100 == 0:
-                print(f"Episode {episode}, Average Reward: {np.mean(episode_rewards[-100:]):.2f}")
+            # Update progress bar
+            avg_reward = np.mean(episode_rewards[-100:])
+            pbar.set_postfix({
+                'avg_reward': f'{avg_reward:.2f}',
+                'epsilon': f'{self.epsilon:.3f}'
+            })
+            
+            # Early stopping check
+            if len(episode_rewards) >= self.config.min_episodes:
+                current_avg = np.mean(episode_rewards[-100:])
+                if current_avg > best_avg_reward:  # MAXIMIZING
+                    best_avg_reward = current_avg
+                    no_improvement_count = 0
+                else:
+                    no_improvement_count += 1
+                
+                if no_improvement_count >= self.config.max_no_improvement:
+                    print(f"\nEarly stopping at episode {episode + 1}")
+                    break
         
         return {
-            'episodes_trained': self.config.num_episodes,
-            'final_epsilon': self.epsilon,
-            'final_avg_reward': np.mean(episode_rewards[-100:])
+            'episode_rewards': episode_rewards,
+            'final_avg_reward': np.mean(episode_rewards[-100:]),
+            'episodes_trained': len(episode_rewards),
+            'final_epsilon': self.epsilon
         }
     
     def _train_step(self):
         """Perform one training step."""
         # Sample batch from memory
-        batch = random.sample(self.memory, self.batch_size)
+        batch = random.sample(self.memory, self.config.dqn_batch_size)
         states, actions, rewards, next_states, dones = zip(*batch)
         
         # Convert to tensors
@@ -141,10 +188,10 @@ class DQNAgent(BaseAgent):
         # Get next Q values
         with torch.no_grad():
             next_q_values = self.target_net(next_states).max(1)[0]
-            target_q_values = rewards + (1 - dones) * self.gamma * next_q_values
+            target_q_values = rewards + (1 - dones) * self.config.gamma * next_q_values
         
         # Compute loss and update
-        loss = self.criterion(current_q_values.squeeze(), target_q_values)
+        loss = nn.MSELoss()(current_q_values.squeeze(), target_q_values)
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
@@ -169,18 +216,16 @@ class DQNAgent(BaseAgent):
             return self._get_action_from_index(action_index)
     
     def save(self, path: str) -> None:
-        """Save the model and training state."""
+        """Save the model."""
         torch.save({
             'policy_net_state_dict': self.policy_net.state_dict(),
             'target_net_state_dict': self.target_net.state_dict(),
-            'optimizer_state_dict': self.optimizer.state_dict(),
-            'epsilon': self.epsilon
+            'optimizer_state_dict': self.optimizer.state_dict()
         }, f"{path}_dqn.pt")
     
     def load(self, path: str) -> None:
-        """Load the model and training state."""
+        """Load the model."""
         checkpoint = torch.load(f"{path}_dqn.pt")
         self.policy_net.load_state_dict(checkpoint['policy_net_state_dict'])
         self.target_net.load_state_dict(checkpoint['target_net_state_dict'])
-        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        self.epsilon = checkpoint['epsilon'] 
+        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict']) 
