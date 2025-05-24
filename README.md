@@ -1,5 +1,3 @@
-# Data Center Control System
-
 This project implements various reinforcement learning algorithms to optimize data center resource allocation and job scheduling. The system manages two types of servers (Type A and Type B) and handles both small and large jobs with different queue capacities.
 
 ## Problem Description
